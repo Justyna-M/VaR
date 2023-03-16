@@ -1,0 +1,720 @@
+---
+title: "Porównanie Value at Risk indeksów giełdowych"
+output:
+  html_document:
+    code_folding: hide
+---
+
+## Cel projektu
+
+<br/> Celem projektu jest wyznaczenie i porównanie Value at Risk dla trzech indeksów giełdowych z różnych krajów z użyciem trzech różnych technik. W pracy zostanie również zweryfikowana jakość oszacowań za pomocą trzech wybranych testów wstecznych. 
+
+## Value at Risk (VaR) i Expected Shortfall (ES)
+
+<br/> Value at Risk to maksymalna oczekiwana strata na portfelu przy określonym prawdopodobieństwie i horyzoncie czasowym. VaR odpowiada na pytanie jaki najgorszy scenariusz może spotkać inwestora z określoną z góry pewnością.
+
+<br/> Expected Shortfall (inaczej: warunkowa wartość narażona na ryzyko, niedobór oczekiwany) odpowiada na pytanie jaką stratę może ponieść inwestor, gdy przekroczony zostanie wyznaczony VaR.
+
+## Opis i charakterystyka danych
+
+<br/> Dane pobrano ze strony stooq.pl. Przedstawiają one notowania dla trzech indeksów giełdowych z okresu: od 1 stycznia 2006 do 31 grudnia 2021 roku. 
+<br/> Dane dotyczą indeksów z trzech krajów:
+<br/>1. Francji - indeks CAC40 giełdy Euronext skupia 40 najsilniejszych spółek spośród 100 o najwyższej kapitalizacji na Giełdzie Paryskiej.
+<br/>2. USA - indeks NASDAQ Composite giełdy NASDAQ. W skład indeksu wchodzą głównie spółki z branży IT.
+<br/>3. Polska - indeks WIG20 skupia 20 największych spółek akcyjnych notowanych na warszawskiej Giełdzie Papierów Wartościowych.
+
+<br/>Dla wszystkich trzech indeksów wczytano dane i policzono proste stopy zwrotów. Wykresy stóp zwortu oraz statystyki opisowe zamieszczono poniżej:
+
+
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+dane_fr<-read.csv("cac.csv")
+dlugosc_fr<-nrow(dane_fr)
+stopy_fr<-((dane_fr$Zamkniecie[-1]-dane_fr$Zamkniecie[-dlugosc_fr])/dane_fr$Zamkniecie[-dlugosc_fr])
+daty_fr<-as.Date(dane_fr$Data[-1])
+plot(daty_fr, stopy_fr, type='l', main="Wykres stóp zwrotu - Francja", ylab="Stopy zwrotu", xlab="Czas")
+```
+```{r}
+hist(stopy_fr, xlab="", main="Histogram stóp zwrotu - Francja")
+```
+
+```{r}
+summary(stopy_fr)
+```
+<br/> Najniższa wartość stóp zwrotu to -0,123, najwyższa: 0,112. Większość stóp zwrotu jest zbliżona do zera.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+dane_usa<-read.csv("ndq.csv")
+dlugosc_usa<-nrow(dane_usa)
+stopy_usa<-((dane_usa$Zamkniecie[-1]-dane_usa$Zamkniecie[-dlugosc_usa])/dane_usa$Zamkniecie[-dlugosc_usa])
+daty_usa<-as.Date(dane_usa$Data[-1])
+plot(daty_usa, stopy_usa, type='l', main="Wykres stóp zwrotu - USA", ylab="Stopy zwrotu", xlab="Czas")
+```
+```{r}
+hist(stopy_usa, xlab="", main="Histogram stóp zwrotu - USA")
+```
+```{r}
+summary(stopy_usa)
+```
+<br/> Najniższa wartość stóp zwrotu to -0,123, najwyższa: 0,118. Większość stóp zwrotu skupia się wokół zera.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+dane_pl<-read.csv("wig20.csv")
+dlugosc_pl<-nrow(dane_pl)
+stopy_pl<-((dane_pl$Zamkniecie[-1]-dane_pl$Zamkniecie[-dlugosc_pl])/dane_pl$Zamkniecie[-dlugosc_pl])
+daty_pl<-as.Date(dane_pl$Data[-1])
+plot(daty_pl, stopy_pl, type='l', main="Wykres stóp zwrotu - Polska", ylab="Stopy zwrotu", xlab="Czas")
+```
+```{r}
+hist(stopy_pl, xlab="", main="Histogram stóp zwrotu - Polska")
+```
+```{r}
+summary(stopy_pl)
+```
+<br/> Najniższa wartość stóp zwrotu to -0,133, najwyższa: 0,085. Większość stóp zwrotu jest zbliżona do zera.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+matplot( y=cbind(stopy_fr, stopy_usa, stopy_pl), type="l", col=c("red","blue", "green"), ylab="", main="Porównanie stóp zwrotu dla trzech państw", xlab="Obserwacja")
+
+```
+<br/> Zestawiono stopy zwrotu ze wszystkich trzech badanych indeksów na jednym wykresie. Polskie stopy zwrotu zanotowały najniższą wartość ze wszystkich trzech w 2020 roku. Ponadto, nie ma dużych różnic pomiędzy kształtem wykresów.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+var_1_fr<-as.vector(0)
+var_2_fr<-as.vector(0)
+var_3_fr<-as.vector(0)
+var_1_usa<-as.vector(0)
+var_2_usa<-as.vector(0)
+var_3_usa<-as.vector(0)
+var_1_pl<-as.vector(0)
+var_2_pl<-as.vector(0)
+var_3_pl<-as.vector(0)
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+dwumianowy_1_fr<-0
+dwumianowy_2_fr<-0
+dwumianowy_3_fr<-0
+dwumianowy_1_usa<-0
+dwumianowy_2_usa<-0
+dwumianowy_3_usa<-0
+dwumianowy_1_pl<-0
+dwumianowy_2_pl<-0
+dwumianowy_3_pl<-0
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+kupca_1_fr<-0
+kupca_2_fr<-0
+kupca_3_fr<-0
+kupca_1_usa<-0
+kupca_2_usa<-0
+kupca_3_usa<-0
+kupca_1_pl<-0
+kupca_2_pl<-0
+kupca_3_pl<-0
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+twr_1_fr<-0
+twr_2_fr<-0
+twr_3_fr<-0
+twr_1_usa<-0
+twr_2_usa<-0
+twr_3_usa<-0
+twr_1_pl<-0
+twr_2_pl<-0
+twr_3_pl<-0
+```
+
+
+## Symulacja historyczna
+
+<br/> Wyznaczono 99% i 95% VaR oraz ES za pomocą prostej metody historycznej dla trzech badanych krajów. Wyniki zestawiono na wykresach. Każdorazowo kolorem niebieskim oznaczono VaR, kolorem różowym - ES, a szarym - stopy zwrotu.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+n=1
+p<-as.vector(0)
+x=0
+szerokosc=250
+okno<- as.vector(0)
+var_99<-as.vector(0)
+es_99<-as.vector(0)
+var_95<-as.vector(0)
+es_95<-as.vector(0)
+for( i in c((szerokosc+1):dlugosc_fr)){
+  okno=stopy_fr[(i-szerokosc):(i-1)]
+  var_99[n]<-quantile(okno, 0.01)
+  es_99[n]<-mean(okno[okno<var_99[n]])
+  var_95[n]<-quantile(okno, 0.05)
+  es_95[n]<-mean(okno[okno<var_95[n]])
+  k<-length(okno[okno<var_99[n]])
+  p[n]<-sum(dbinom(c(k:szerokosc), szerokosc, 0.01))
+  if(k<7&&k>0){
+    kupca_1_fr<-kupca_1_fr+1
+  }
+  n=n+1
+}
+var_99<- -1*var_99
+es_99<- -1*es_99
+var_95<- -1*var_95
+es_95<- -1*es_95
+daty2_fr<-daty_fr[(szerokosc+1):dlugosc_fr]
+plot(daty2_fr, es_99, col="pink", type='l', xlab="Czas", main="Francja: VaR i ES dla stop zwrotu - 99%", ylab="ES i VaR", ylim=c(0, 0.1))
+lines(daty2_fr, var_99, col="blue")
+lines(daty2_fr, stopy_fr[(szerokosc+1):dlugosc_fr], col="grey", lwd=0.5, lty=3)
+plot(daty2_fr, es_95, type="l", xlab="Czas", main="Francja: VaR i ES dla stop zwrotu - 95%", col="pink", ylab="ES i VaR", ylim=c(0, 0.08))
+lines(daty2_fr, var_95, col="blue")
+lines(daty2_fr, stopy_fr[(szerokosc+1):dlugosc_fr], col="grey", lwd=0.5, lty=3)
+var_1_fr<-var_99
+dwumianowy_1_fr<-(length(p[p>0.05]))/length(p)
+pom<-stopy_fr[(szerokosc+1):dlugosc_fr-1]
+twr_1_fr<-length(pom[pom>var_1_fr])
+kupca_1_fr<-kupca_1_fr/length(var_1_fr)
+```
+<br/> W przypadku prostej metody historycznej wykresy przyjmują postać schodkową. Dla 99% VaRu jest on mniej wygładzony niż dla 95% VaRu. Oba wykresy wskazują na dwa duże wzrosty - w czasie kryzysu w 2008 roku oraz w czasie lockdownów związanych z pandemią COVID-19 w marcu 2020 roku. VaR jest zawsze niższy niż ES, ale różnica pomiędzy wykresami nie jest stała. 
+<br/> W prostej metodzie historycznej VaR jest wyznaczany jako kwantyl empirycznych obserwacji z okna o długości 250 dni, stąd liczba wyjątków w oknie jest zawsze stała i równa 3 (w przypadku VaR 99%). Największe przekroczenia VaRu przez wartości stóp można zaobserwować na początkach "kryzysów". 
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+n=1
+szerokosc=250
+p<-as.vector(0)
+okno<- as.vector(0)
+var_99<-as.vector(0)
+es_99<-as.vector(0)
+var_95<-as.vector(0)
+es_95<-as.vector(0)
+for( i in c((szerokosc+1):dlugosc_usa)){
+  okno=stopy_usa[(i-szerokosc):(i-1)]
+  var_99[n]<-quantile(okno, 0.01)
+  es_99[n]<-mean(okno[okno<var_99[n]])
+  var_95[n]<-quantile(okno, 0.05)
+  es_95[n]<-mean(okno[okno<var_95[n]])
+  k<-length(okno[okno<var_99[n]])
+  p[n]<-sum(dbinom(c(k:szerokosc), szerokosc, 0.01))
+  if(k<7&&k>0){
+    kupca_1_usa<-kupca_1_usa+1
+  }
+  n=n+1
+}
+var_99<- -1*var_99
+es_99<- -1*es_99
+var_95<- -1*var_95
+es_95<- -1*es_95
+daty2_usa<-daty_usa[(szerokosc+1):dlugosc_usa]
+plot(daty2_usa, es_99, col="pink", type='l', xlab="Czas", main="USA: VaR i ES dla stop zwrotu - 99%", ylab="ES i VaR", ylim=c(0, 0.1))
+lines(daty2_usa, var_99, col="blue")
+lines(daty2_usa, stopy_usa[(szerokosc+1):dlugosc_usa], col="grey", lwd=0.5, lty=3)
+plot(daty2_usa, es_95, type="l", xlab="Czas", main="USA: VaR i ES dla stop zwrotu - 95%", col="pink", ylab="ES i VaR", ylim=c(0, 0.08))
+lines(daty2_usa, var_95, col="blue")
+lines(daty2_usa, stopy_usa[(szerokosc+1):dlugosc_usa], col="grey", lwd=0.5, lty=3)
+var_1_usa<-var_99
+dwumianowy_1_usa<-(length(p[p>0.05]))/length(p)
+pom<-stopy_usa[(szerokosc+1):dlugosc_usa-1]
+twr_1_usa<-length(pom[pom>var_1_usa])
+kupca_1_usa<-kupca_1_usa/length(var_1_usa)
+```
+<br/> Podobnie jak w przypadku Francji, wykres VaRu dla indeksu amerykańskiego przyjmuje postać schodkową. Tutaj również można zaobserwować dwa duże wzrosty w 2008 i w 2020 roku.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+n=1
+p<-as.vector(0)
+szerokosc=250
+okno<- as.vector(0)
+var_99<-as.vector(0)
+es_99<-as.vector(0)
+var_95<-as.vector(0)
+es_95<-as.vector(0)
+for( i in c((szerokosc+1):dlugosc_pl)){
+  okno=stopy_pl[(i-szerokosc):(i-1)]
+  var_99[n]<-quantile(okno, 0.01)
+  es_99[n]<-mean(okno[okno<var_99[n]])
+  var_95[n]<-quantile(okno, 0.05)
+  es_95[n]<-mean(okno[okno<var_95[n]])
+  k<-length(okno[okno<var_99[n]])
+  p[n]<-sum(dbinom(c(k:szerokosc), szerokosc, 0.01))
+  if(k<7&&k>0){
+    kupca_1_pl<-kupca_1_pl+1
+  }
+  n=n+1
+}
+var_99<- -1*var_99
+es_99<- -1*es_99
+var_95<- -1*var_95
+es_95<- -1*es_95
+daty2_pl<-daty_pl[(szerokosc+1):dlugosc_pl]
+plot(daty2_pl, es_99, col="pink", type='l', xlab="Czas", main="Polska: VaR i ES dla stop zwrotu - 99%", ylab="ES i VaR", ylim=c(0, 0.1))
+lines(daty2_pl, var_99, col="blue")
+lines(daty2_pl, stopy_pl[(szerokosc+1):dlugosc_pl], col="grey", lwd=0.5, lty=3)
+plot(daty2_pl, es_95, type="l", xlab="Czas", main="Polska: VaR i ES dla stop zwrotu - 95%", col="pink", ylab="ES i VaR", ylim=c(0, 0.08))
+lines(daty2_pl, var_95, col="blue")
+lines(daty2_pl, stopy_pl[(szerokosc+1):dlugosc_pl], col="grey", lwd=0.5, lty=3)
+var_1_pl<-var_99
+dwumianowy_1_pl<-(length(p[p>0.05]))/length(p)
+pom<-stopy_pl[(szerokosc+1):dlugosc_pl-1]
+twr_1_pl<-length(pom[pom>var_1_pl])
+kupca_1_pl<-kupca_1_pl/length(var_1_pl)
+```
+<br/> Na Polskim indeksie WIG20 również można zaobserwować kryzysy w 2008 oraz w 2020 roku. Wykres VaR przyjmuje postać schodkową i jest poniżej wykresu ES.
+
+## Metoda Monte Carlo
+
+<br/> Drugą z metod do wyznaczania VaRu, którą zastosowano w projekcie jest metoda Monte Carlo. Założono w niej, że stopy zwrotu mają rozkład normalny, a parametry rozkładu wyznaczano na podstawie 250-dniowej historii. Natępnie losowano 1000 obserwacji z rozkładu o zadanej średniej i odchyleniu standardowym. Na ich podstawie wyznaczono VaR oraz ES.
+<br/> Wyniki zestawiono na wykresach. Każdorazowo kolorem niebieskim oznaczono VaR, kolorem różowym - ES, a szarym - stopy zwrotu.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+n=1
+p<-as.vector(0)
+szerokosc=250
+okno<- as.vector(0)
+var_99<-as.vector(0)
+es_99<-as.vector(0)
+var_99_t<-as.vector(0)
+var_95<-as.vector(0)
+es_95<-as.vector(0)
+var_95_t<-as.vector(0)
+for( i in c((szerokosc+1):dlugosc_fr)){
+  okno=stopy_fr[(i-szerokosc):(i-1)]
+  srednia=mean(okno)
+  odchylenie<-sd(okno)
+  losowe<-rnorm(1000, mean=srednia, sd=odchylenie)
+  var_99[n]<-quantile(losowe, 0.01)
+  var_95[n]<-quantile(losowe, 0.05)
+  var_99_t[n]<-qnorm(0.01, mean=srednia, sd=odchylenie)
+  var_95_t[n]<-qnorm(0.05, mean=srednia, sd=odchylenie)
+  es_99[n]<-mean(losowe[losowe<var_99[n]])
+  es_95[n]<-mean(losowe[losowe<var_95[n]])
+  k<-length(okno[okno<var_99[n]])
+  p[n]<-sum(dbinom(c(k:szerokosc), szerokosc, 0.01))
+  if(k<7&&k>0){
+    kupca_2_fr<-kupca_2_fr+1
+  }
+  n=n+1
+}
+var_99<- -1*var_99
+var_99_t<- -1*var_99_t
+es_99<- -1*es_99
+var_95<- -1*var_95
+var_95_t<- -1*var_95_t
+es_95<- -1*es_95
+plot(daty2_fr, es_99, col="pink", type='l', xlab="Czas", main="Francja: VaR i ES dla stop zwrotu - 99%", ylab="ES i VaR", ylim=c(0, 0.1))
+lines(daty2_fr, var_99, col="blue")
+lines(daty2_fr, var_99_t, col="purple", lwd=2)
+lines(daty2_fr, stopy_fr[(szerokosc+1):dlugosc_fr], col="grey", lwd=0.5, lty=3)
+plot(daty2_fr, es_95, type="l", xlab="Czas", main="Francja: VaR i ES dla stop zwrotu - 95%", col="pink", ylab="ES i VaR", ylim=c(0, 0.08))
+lines(daty2_fr, var_95, col="blue")
+lines(daty2_fr, var_95_t, col="purple", lwd=2)
+lines(daty2_fr, stopy_fr[(szerokosc+1):dlugosc_fr], col="grey", lwd=0.5, lty=3)
+var_2_fr<-var_99
+dwumianowy_2_fr<-(length(p[p>0.05]))/length(p)
+pom<-stopy_fr[(szerokosc+1):dlugosc_fr-1]
+twr_2_fr<-length(pom[pom>var_2_fr])
+kupca_2_fr<-kupca_2_fr/length(var_2_fr)
+```
+<br/> Wykres uzyskany przy użyciu metody Monte Carlo różni się kształtem od wykresu otrzymanego przy pomocy symulacji historycznej. Ze względu na losowanie obserwacji charakteryzuje się on grubszą linią (dla porównania kolorem fioletowym narysowano wykres VaR policzony z definicji kwantyla dla rozkładu normalnego o zadanych parametrach). Tutaj również można zaobserwować kryzysy w 2008 oraz w 2020 roku. Nieliczne przekroczenia VaRu przez stopy zwrotu są obserwowane na wykresie, w szczególności na początku kryzysu w 2008 roku.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+n=1
+szerokosc=250
+p<-as.vector(0)
+okno<- as.vector(0)
+var_99<-as.vector(0)
+es_99<-as.vector(0)
+var_95<-as.vector(0)
+es_95<-as.vector(0)
+for( i in c((szerokosc+1):dlugosc_usa)){
+  okno=stopy_usa[(i-szerokosc):(i-1)]
+  srednia=mean(okno)
+  odchylenie<-sd(okno)
+  losowe<-rnorm(1000, mean=srednia, sd=odchylenie)
+  var_99[n]<-quantile(losowe, 0.01)
+  var_95[n]<-quantile(losowe, 0.05)
+  es_99[n]<-mean(losowe[losowe<var_99[n]])
+  es_95[n]<-mean(losowe[losowe<var_95[n]])
+  k<-length(okno[okno<var_99[n]])
+  p[n]<-sum(dbinom(c(k:szerokosc), szerokosc, 0.01))
+  if(k<7&&k>0){
+    kupca_2_usa<-kupca_2_usa+1
+  }
+  n=n+1
+}
+var_99<- -1*var_99
+es_99<- -1*es_99
+var_95<- -1*var_95
+es_95<- -1*es_95
+plot(daty2_usa, es_99, col="pink", type='l', xlab="Czas", main="USA: VaR i ES dla stop zwrotu - 99%", ylab="ES i VaR", ylim=c(0, 0.1))
+lines(daty2_usa, var_99, col="blue")
+lines(daty2_usa, stopy_usa[(szerokosc+1):dlugosc_usa], col="grey", lwd=0.5, lty=3)
+plot(daty2_usa, es_95, type="l", xlab="Czas", main="USA: VaR i ES dla stop zwrotu - 95%", col="pink", ylab="ES i VaR", ylim=c(0, 0.08))
+lines(daty2_usa, var_95, col="blue")
+lines(daty2_usa, stopy_usa[(szerokosc+1):dlugosc_usa], col="grey", lwd=0.5, lty=3)
+var_2_usa<-var_99
+dwumianowy_2_usa<-(length(p[p>0.05]))/length(p)
+pom<-stopy_usa[(szerokosc+1):dlugosc_usa-1]
+twr_2_usa<-length(pom[pom>var_2_usa])
+kupca_2_usa<-kupca_2_usa/length(var_2_usa)
+```
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+n=1
+szerokosc=250
+p<-as.vector(0)
+okno<- as.vector(0)
+var_99<-as.vector(0)
+es_99<-as.vector(0)
+var_95<-as.vector(0)
+es_95<-as.vector(0)
+for( i in c((szerokosc+1):dlugosc_pl)){
+  okno=stopy_pl[(i-szerokosc):(i-1)]
+  srednia=mean(okno)
+  odchylenie<-sd(okno)
+  losowe<-rnorm(1000, mean=srednia, sd=odchylenie)
+  var_99[n]<-quantile(losowe, 0.01)
+  var_95[n]<-quantile(losowe, 0.05)
+  es_99[n]<-mean(losowe[losowe<var_99[n]])
+  es_95[n]<-mean(losowe[losowe<var_95[n]])
+  k<-length(okno[okno<var_99[n]])
+  p[n]<-sum(dbinom(c(k:szerokosc), szerokosc, 0.01))
+  if(k<7&&k>0){
+    kupca_2_pl<-kupca_2_pl+1
+  }
+  n=n+1
+}
+var_99<- -1*var_99
+es_99<- -1*es_99
+var_95<- -1*var_95
+es_95<- -1*es_95
+plot(daty2_pl, es_99, col="pink", type='l', xlab="Czas", main="Polska: VaR i ES dla stop zwrotu - 99%", ylab="ES i VaR", ylim=c(0, 0.1))
+lines(daty2_pl, var_99, col="blue")
+lines(daty2_pl, stopy_pl[(szerokosc+1):dlugosc_pl], col="grey", lwd=0.5, lty=3)
+plot(daty2_pl, es_95, type="l", xlab="Czas", main="Polska: VaR i ES dla stop zwrotu - 95%", col="pink", ylab="ES i VaR", ylim=c(0, 0.08))
+lines(daty2_pl, var_95, col="blue")
+lines(daty2_pl, stopy_pl[(szerokosc+1):dlugosc_pl], col="grey", lwd=0.5, lty=3)
+var_2_pl<-var_99
+dwumianowy_2_pl<-(length(p[p>0.05]))/length(p)
+pom<-stopy_pl[(szerokosc+1):dlugosc_pl-1]
+twr_2_pl<-length(pom[pom>var_2_pl])
+kupca_2_pl<-kupca_2_pl/length(var_2_pl)
+```
+## Metoda uwzględniająca heteroskedastyczność stóp zwrotu
+
+<br/> Ostatnia z metod jest modyfikacją symulacji historycznej uwzględniającą zjawisko heteroskedastyczności stóp zwrotu. Zmienność stóp wyznaczono za pomocą metody EWMA z parametrem lambda równym 0,94. Następnie wyznaczono 99% i 95% procentowy VaR i ES dla wszystkich trzech krajów. Wyniki pokazano na wykresie zgodnie z przyjętą konwencją - kolorem niebieskim VaR, różowym - ES, szarym - stopy zwrotu.
+```{r echo=FALSE}
+lambda=0.94
+EWMA_fr<-as.vector(0)
+for( n in c(2:(dlugosc_fr+1))){
+  EWMA_fr[n]<-lambda*EWMA_fr[(n-1)]+(1-lambda)*stopy_fr[(n-1)]^2
+}
+EWMA_fr=sqrt(EWMA_fr)
+
+#plot(EWMA_fr, type="l", ylab="Zmiennosc stop", main="Zmiennosc stop w modelu EWMA", xlab="Obserwacja")
+```
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+n=1
+szerokosc=250
+p<-as.vector(0)
+okno<- as.vector(0)
+var_99<-as.vector(0)
+es_99<-as.vector(0)
+var_95<-as.vector(0)
+es_95<-as.vector(0)
+for( i in c((szerokosc+1):dlugosc_fr)){
+  okno<-stopy_fr[(i-szerokosc):(i-1)]*EWMA_fr[i-1]/EWMA_fr[(i-szerokosc):(i-1)]
+  var_99[n]<-quantile(okno, 0.01)
+  es_99[n]<-mean(okno[okno<var_99[n]])
+  var_95[n]<-quantile(okno, 0.05)
+  es_95[n]<-mean(okno[okno<var_95[n]])
+  k<-length(okno[okno<var_99[n]])
+  p[n]<-sum(dbinom(c(k:szerokosc), szerokosc, 0.01))
+  if(k<7&&k>0){
+    kupca_3_fr<-kupca_3_fr+1
+  }
+  n=n+1
+}
+var_99<- -1*var_99
+es_99<- -1*es_99
+var_95<- -1*var_95
+es_95<- -1*es_95
+plot(daty2_fr, es_99, col="pink", type='l', xlab="Czas", main="Francja: VaR i ES dla stop zwrotu - 99%", ylab="ES i VaR", ylim=c(0, 0.22))
+lines(daty2_fr, var_99, col="blue")
+lines(daty2_fr, stopy_fr[(szerokosc+1):dlugosc_fr], col="grey", lwd=0.5, lty=3)
+plot(daty2_fr, es_95, type="l", xlab="Czas", main="Francja: VaR i ES dla stop zwrotu - 95%", col="pink", ylab="ES i VaR", ylim=c(0, 0.16))
+lines(daty2_fr, var_95, col="blue")
+lines(daty2_fr, stopy_fr[(szerokosc+1):dlugosc_fr], col="grey", lwd=0.5, lty=3)
+var_3_fr<-var_99
+dwumianowy_3_fr<-(length(p[p>0.05]))/length(p)
+pom<-stopy_fr[(szerokosc+1):dlugosc_fr-1]
+twr_3_fr<-length(pom[pom>var_3_fr])
+kupca_3_fr<-kupca_3_fr/length(var_3_fr)
+```
+<br/> Wyres uzyskany przy pomocy tej metody różni się kształtem od dwóch pozostałych. Piki są węższe i ostre, ich wierzchołek z reguły jest być przesunięty w lewo. W porównaniu do wyników uzyskanych przy użyciu prostej symulacji historycznej i Monte Carlo, wzrost w 2020 roku jest tutaj wyższy niż w 2008 roku. Konieczne było również rozszerzenie osi y wykresu - metoda uwzględniająca heteroskedastyczność zdaje się "wzmacniać" sytuacje ekstremalne takie jak kryzysy gospodarcze ze względu na dużą zmiennośc stóp w tych okresach.
+<br/> Podobnie jak w poprzednich metodach ES znajduje się zawsze powyżej VaRu, lecz odległość między wykresami nie jest stała.
+
+```{r echo=FALSE}
+lambda=0.94
+EWMA_usa<-as.vector(0)
+for( n in c(2:(dlugosc_usa+1))){
+  EWMA_usa[n]<-lambda*EWMA_usa[(n-1)]+(1-lambda)*stopy_usa[(n-1)]^2
+}
+EWMA_usa=sqrt(EWMA_usa)
+
+#plot(EWMA_usa, type="l", ylab="Zmiennosc stop", main="Zmiennosc stop w modelu EWMA", xlab="Obserwacja")
+```
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+n=1
+szerokosc=250
+p<-as.vector(0)
+okno<- as.vector(0)
+var_99<-as.vector(0)
+es_99<-as.vector(0)
+var_95<-as.vector(0)
+es_95<-as.vector(0)
+for( i in c((szerokosc+1):dlugosc_usa)){
+  okno<-stopy_usa[(i-szerokosc):(i-1)]*EWMA_usa[i-1]/EWMA_usa[(i-szerokosc):(i-1)]
+  var_99[n]<-quantile(okno, 0.01)
+  es_99[n]<-mean(okno[okno<var_99[n]])
+  var_95[n]<-quantile(okno, 0.05)
+  es_95[n]<-mean(okno[okno<var_95[n]])
+  k<-length(okno[okno<var_99[n]])
+  p[n]<-sum(dbinom(c(k:szerokosc), szerokosc, 0.01))
+  if(k<7&&k>0){
+    kupca_3_usa<-kupca_3_usa+1
+  }
+  n=n+1
+}
+var_99<- -1*var_99
+es_99<- -1*es_99
+var_95<- -1*var_95
+es_95<- -1*es_95
+plot(daty2_usa, es_99, col="pink", type='l', xlab="Czas", main="USA: VaR i ES dla stop zwrotu - 99%", ylab="ES i VaR", ylim=c(0, 0.22))
+lines(daty2_usa, var_99, col="blue")
+lines(daty2_usa, stopy_usa[(szerokosc+1):dlugosc_usa], col="grey", lwd=0.5, lty=3)
+plot(daty2_usa, es_95, type="l", xlab="Czas", main="USA: VaR i ES dla stop zwrotu - 95%", col="pink", ylab="ES i VaR", ylim=c(0, 0.16))
+lines(daty2_usa, var_95, col="blue")
+lines(daty2_usa, stopy_usa[(szerokosc+1):dlugosc_usa], col="grey", lwd=0.5, lty=3)
+var_3_usa<-var_99
+dwumianowy_3_usa<-(length(p[p>0.05]))/length(p)
+pom<-stopy_usa[(szerokosc+1):(dlugosc_usa-1)]
+twr_3_usa<-length(pom[pom>var_3_usa])
+kupca_3_usa<-kupca_3_usa/length(var_3_usa)
+```
+
+```{r echo=FALSE}
+lambda=0.94
+EWMA_pl<-as.vector(0)
+for( n in c(2:(dlugosc_pl+1))){
+  EWMA_pl[n]<-lambda*EWMA_pl[(n-1)]+(1-lambda)*stopy_pl[(n-1)]^2
+}
+EWMA_pl=sqrt(EWMA_pl)
+
+#plot(EWMA_pl, type="l", ylab="Zmiennosc stop", main="Zmiennosc stop w modelu EWMA", xlab="Obserwacja")
+```
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+n=1
+szerokosc=250
+p<-as.vector(0)
+okno<- as.vector(0)
+var_99<-as.vector(0)
+es_99<-as.vector(0)
+var_95<-as.vector(0)
+es_95<-as.vector(0)
+for( i in c((szerokosc+1):dlugosc_pl)){
+  okno<-stopy_pl[(i-szerokosc):(i-1)]*EWMA_pl[i-1]/EWMA_pl[(i-szerokosc):(i-1)]
+  var_99[n]<-quantile(okno, 0.01)
+  es_99[n]<-mean(okno[okno<var_99[n]])
+  var_95[n]<-quantile(okno, 0.05)
+  es_95[n]<-mean(okno[okno<var_95[n]])
+  k<-length(okno[okno<var_99[n]])
+  p[n]<-sum(dbinom(c(k:szerokosc), szerokosc, 0.01))
+  if(k<7&&k>0){
+    kupca_3_pl<-kupca_3_pl+1
+  }
+  n=n+1
+}
+var_99<- -1*var_99
+es_99<- -1*es_99
+var_95<- -1*var_95
+es_95<- -1*es_95
+plot(daty2_pl, es_99, col="pink", type='l', xlab="Czas", main="Polska: VaR i ES dla stop zwrotu - 99%", ylab="ES i VaR", ylim=c(0, 0.22))
+lines(daty2_pl, var_99, col="blue")
+lines(daty2_pl, stopy_pl[(szerokosc+1):dlugosc_pl], col="grey", lwd=0.5, lty=3)
+plot(daty2_pl, es_95, type="l", xlab="Czas", main="Polska: VaR i ES dla stop zwrotu - 95%", col="pink", ylab="ES i VaR", ylim=c(0, 0.16))
+lines(daty2_pl, var_95, col="blue")
+lines(daty2_pl, stopy_pl[(szerokosc+1):dlugosc_pl], col="grey", lwd=0.5, lty=3)
+var_3_pl<-var_99
+dwumianowy_3_pl<-(length(p[p>0.05]))/length(p)
+pom<-stopy_pl[(szerokosc+1):dlugosc_pl-1]
+twr_3_pl<-length(pom[pom>var_3_pl])
+kupca_3_pl<-kupca_3_pl/length(var_3_pl)
+```
+## Porównanie VaR dla każdego z państw osobno
+
+<br/> Na poniższych wykresach zestawiono 99% VaR uzyskany za pomocą trzech metod, dla każdego z krajów osobno. Kolorem różowym oznaczono wyniki uzyskane przy użyciu prostej symulacji historycznej, niebieskim - Monte Carlo, zielonym - metodą zmodyfikowaną o heteroskedastyczność; szarym nakreślono stopy zwrotu.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+plot(daty2_fr, var_1_fr, col="pink", type='l', xlab="Czas", main="Francja: VaR dla stóp zwrotu - 99%", ylab="VaR", ylim=c(0, 0.22), lwd=3)
+lines(daty2_fr, var_2_fr, col="blue")
+lines(daty2_fr, var_3_fr, col="green")
+lines(daty2_fr, stopy_fr[(szerokosc+1):dlugosc_fr], col="grey", lty=3)
+```
+<br/> Jak już wspomniano metoda uwzględniająca heteroskedastyczność zdaje się wzmacniać sytuacje kryzyskowe i najlepiej dopasowywać do danych. Metody symulacji historycznej i Monte Carlo dłużej "pamiętają" gwałtowne zmiany. Sytuacje kiedy VaR zostaje przekroczony przez stopy zwrotu w przypadku dwóch pierwszych metod zdarzają się najczęściej na początku kryzysów.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+plot(daty2_usa, var_1_usa, col="pink", type='l', xlab="Czas", main="USA: VaR i ES dla stop zwrotu - 99%", ylab="VaR", ylim=c(0, 0.22), lwd=3)
+lines(daty2_usa, var_2_usa, col="blue")
+lines(daty2_usa, var_3_usa, col="green")
+lines(daty2_usa, stopy_usa[(szerokosc+1):dlugosc_usa], col="grey", lty=3)
+```
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+plot(daty2_pl, var_1_pl, col="pink", type='l', xlab="Czas", main="Polska: VaR i ES dla stop zwrotu - 99%", ylab="VaR", ylim=c(0, 0.22), lwd=3)
+lines(daty2_pl, var_2_pl, col="blue")
+lines(daty2_pl, var_3_pl, col="green")
+lines(daty2_pl, stopy_pl[(szerokosc+1):dlugosc_pl], col="grey", lty=3)
+```
+
+## Porównanie VaR dla każdej z metod osobno
+
+<br/> Na poniższych wykresach zestawiono 99% VaR dla trzech państw, dla każdej z metod osobno. Kolorem czerwonym oznaczono francuski indeks, niebieskim - amerykański indeks, zielonym - polski indeks giełdowy.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+matplot( y=cbind(var_1_fr, var_1_usa, var_1_pl), type="l", col=c("red","blue", "green"), ylab="VaR", main="Porównanie VaR 99% dla trzech państw - symulacja historyczna", xlab="Obserwacja")
+
+```
+<br/> Dla VaRu wyznaczonego przy pomocy symulacji historycznej, można zauważyć najmocniejsze wzrosty w 2008 i w 2020 roku dla indeksu amerykańskiego. Każda z gospodarek miała ponadto swoje lokalne minima i maksima, które wynikały z pewnością z wydarzeń na ich rynkach wewnętrznych.
+<br/> Przesunięcie poziome jest wynikiem różnej liczby obserwacji (dni pracujących) dla każdego z państw.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+matplot( y=cbind(var_2_fr, var_2_usa, var_2_pl), type="l", col=c("red","blue", "green"), ylab="VaR", main="Porównanie VaR 99% dla trzech państw - Monte Carlo", xlab="Obserwacja")
+
+```
+<br/> Ze względu na grubą linię VaRu uzyskanego z metody Monte Carlo, trudno wskazać jednoznacznie, który z indeksów charakteryzował się wyższym VaRem. Podobnie jak w symulacji historycznej, można zaobserwować występowanie pewnych lokalnych minimów i maksimóm dla każdej z gospodarek.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+matplot( y=cbind(var_3_fr, var_3_usa, var_3_pl), type="l", col=c("red","blue", "green"), ylab="Zmiennosc stop", main="Porównanie VaR 99% dla trzech państw - heteroskedastyczność", xlab="Obserwacja")
+
+```
+<br/> Wyniki uzyskane za pomocą metody uwzględniającej heteroskedastyczność są podobne dla wszystkich trzech badanych państw, choć bazując na wykresie można powiedzieć, że francuska gospodarka najmocniej "odczuła" kryzys wywołany pandemią, zaś polska - najmniej.
+
+## Testy wsteczne 
+
+
+Wykonano trzy testy wsteczne: test opierający się na rozkładzie dwumianowym, test wartości rzeczywistej oraz test Kupca. W pierwszym z testów dla wyznaczonego prawdopodobieństwa przyjęto próg na poziomie 5% (jeśli prawdopodobieństwo jest większe od 5% to liczba wyjątków jest prawidłowa; w przeciwnym wypadku VaR jest niepoprawnie wyznaczony). Wyniki przedstawione w tabeli pokazują w ilu przypadkach VaR został poprawnie wyznaczony. W teście wartości rzeczywistej pożądany wynik powinien być zbliżony do 1% z liczby wyliczonych VaRów. W teście Kupca ponownie zaprezentowano jakość wyznaczania VaRu za pomocą procentów.
+
+<br/>
+
+FRANCJA - liczba obliczonych VaRów: 3846
+<br/>
+<table>
+ <thead>
+  <tr>
+   <th style="text-align:left;"> Metoda/Test </th>
+   <th style="text-align:right;"> Dwumianowy   </th>
+   <th style="text-align:right;"> Wartości rzeczywistej   </th>
+   <th style="text-align:right;"> Kupca   </th>
+  </tr>
+ </thead>
+<tbody>
+  <tr>
+   <td style="text-align:left;"> Symulacja historyczna </td>
+   <td style="text-align:right;"> 100% </td>
+   <td style="text-align:right;"> 33 </td>
+   <td style="text-align:right;"> 100% </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> Monte Carlo </td>
+   <td style="text-align:right;"> 65% </td>
+   <td style="text-align:right;"> 64 </td>
+   <td style="text-align:right;"> 84% </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> Metoda uwzględniająca heteroskedastyczność </td>
+   <td style="text-align:right;"> 100% </td>
+   <td style="text-align:right;"> 36 </td>
+   <td style="text-align:right;"> 100% </td>
+  </tr>
+</tbody>
+</table>
+<br/>
+<br/>
+USA - liczba obliczonych VaRów: 3779
+<br/>
+<table>
+ <thead>
+  <tr>
+   <th style="text-align:left;"> Metoda/Test </th>
+   <th style="text-align:right;"> Dwumianowy   </th>
+   <th style="text-align:right;"> Wartości rzeczywistej    </th>
+   <th style="text-align:right;"> Kupca    </th>
+  </tr>
+ </thead>
+<tbody>
+  <tr>
+   <td style="text-align:left;"> Symulacja historyczna </td>
+   <td style="text-align:right;"> 100% </td>
+   <td style="text-align:right;"> 38 </td>
+   <td style="text-align:right;"> 100% </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> Monte Carlo </td>
+   <td style="text-align:right;"> 45% </td>
+   <td style="text-align:right;"> 71 </td>
+   <td style="text-align:right;"> 59% </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> Metoda uwzględniająca heteroskedastyczność </td>
+   <td style="text-align:right;"> 100% </td>
+   <td style="text-align:right;"> 13 </td>
+   <td style="text-align:right;"> 100% </td>
+  </tr>
+</tbody>
+</table>
+<br/>
+<br/>
+Polska - liczba obliczonych VaRów: 3752
+<br/>
+<table>
+ <thead>
+  <tr>
+   <th style="text-align:left;"> Metoda/Test </th>
+   <th style="text-align:right;"> Dwumianowy    </th>
+   <th style="text-align:right;"> Wartości rzeczywistej    </th>
+   <th style="text-align:right;"> Kupca    </th>
+  </tr>
+ </thead>
+<tbody>
+  <tr>
+   <td style="text-align:left;"> Symulacja historyczna </td>
+   <td style="text-align:right;"> 100% </td>
+   <td style="text-align:right;"> 36 </td>
+   <td style="text-align:right;"> 100% </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> Monte Carlo </td>
+   <td style="text-align:right;"> 87% </td>
+   <td style="text-align:right;"> 56 </td>
+   <td style="text-align:right;"> 94% </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> Metoda uwzględniająca heteroskedastyczność </td>
+   <td style="text-align:right;"> 100% </td>
+   <td style="text-align:right;"> 38 </td>
+   <td style="text-align:right;"> 100% </td>
+  </tr>
+</tbody>
+</table>
+<br/>
+<br/>
+
+<br/> Dla metody historycznej oraz metody uwzględniającej heteroskedastyczność wyniki testu opierającego się na rozkładzie dwumianowym oraz testu Kupca są zawsze równe 100%, ponieważ kwantyl rozkładu (a więc VaR) został wyznaczony na podstawie empirycznych obserwacji. W przypadku metody Monte Carlo wyniki wspomianych dwóch testów są niższe i najlepsze dla indeksu polskiego. W teście wartości rzeczywistych również najgorzej wypada metoda Monte Carlo z liczbą wyjątków przekraczającą 1% VaRów. 
+
+## Podsumowanie
+
+<br/> W projekcie wyznaczono VaR dla trzech indeksów giełdowych z okresu od 1 stycznia 2006 roku do 31 grudnia 2021. Każda z trzech użytych metod pozwoliła na uzyskanie odmiennych wykresów, jednak wszystkie wskazały na wzrost VaR oraz ES w kluczowych momentach dla gospodarki światowej takich jak kryzys w 2008 roku oraz lockdown spowodowany pandemią COVID-19 w 2020 roku. Ponadto każdy z indeksów zanotował swoje indywidualne maksima i minima spowodowane najprawdopodobniej wydarzeniami na rynkach lokalnych.
+<br/> Modelem, który - na podstawie wykresów - najlepiej sprawdza się w sytuacjach kryzysowych jest metoda symulacji historycznej uwzględniająca heteroskedastyczność stóp zwrotu. Pozostałe dwie metody dłużej "pamiętają" gwałtowne zmiany na rynku, jednocześnie nie reagując na nie wystarczająco mocno wraz z początkiem ich wystąpienia.
+<br/> Na podstawie testów wstecznych, którymi badano jakość wyznaczenia VaRu dla każdej z metod, można przypuszczać, że najgorszą z metod jest metoda Monte Carlo. Jednocześnie warto zwrócić uwagę, że testy te bazowały jedynie na liczbie wyjątków (liczonej w różny sposób) i nie uwzględniły czy przekroczenia VaRu były niezależne w czasie. Być może przeprowadzenie testu Christoffersona dla wszystkich trzech metod wskazałoby na ich mocne lub słabe strony, które nie są widoczne w aktualnym zestawieniu.
+<br/>
+<br/>
+
